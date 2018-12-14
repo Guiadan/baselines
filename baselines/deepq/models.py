@@ -69,8 +69,34 @@ def _cnn_to_mlp(convs, hiddens, dueling, input_, num_actions, scope, reuse=False
             q_out = action_scores
         return q_out
 
+def _cnn_to_neural_linear(convs, hiddens, dueling, inpt, num_actions, scope, reuse=False, layer_norm=False):
 
-def cnn_to_mlp(convs, hiddens, dueling=False, layer_norm=False):
+    with tf.variable_scope(scope, reuse=reuse):
+        out = inpt
+        with tf.variable_scope("convnet"):
+            for num_outputs, kernel_size, stride in convs:
+                out = layers.convolution2d(out,
+                                           num_outputs=num_outputs,
+                                           kernel_size=kernel_size,
+                                           stride=stride)
+
+                out = layers.batch_norm(out)
+                out = tf.nn.relu(out)
+        conv_out = layers.flatten(out)
+        with tf.variable_scope("action_value"):
+            action_out = conv_out
+            if layer_norm:
+                action_out = layers.layer_norm(action_out, center=True, scale=True)
+            for hidden in hiddens:
+                action_out = layers.fully_connected(action_out, num_outputs=hidden, activation_fn=None)
+                action_out = tf.nn.relu(action_out) #TODO: normalize features' space
+
+        action_scores = layers.fully_connected(action_out, num_outputs=num_actions, activation_fn=None)
+
+        features = action_out
+        return action_scores, features
+
+def cnn_to_mlp(convs, hiddens, dueling=False, layer_norm=False, neural_linear=True):
     """This model takes as input an observation and returns values of all actions.
 
     Parameters
@@ -92,7 +118,9 @@ def cnn_to_mlp(convs, hiddens, dueling=False, layer_norm=False):
     q_func: function
         q_function for DQN algorithm.
     """
-
+    if neural_linear:
+        return lambda *args, **kwargs: _cnn_to_neural_linear(convs, hiddens, dueling, layer_norm=layer_norm, *args,
+                                                             **kwargs)
     return lambda *args, **kwargs: _cnn_to_mlp(convs, hiddens, dueling, layer_norm=layer_norm, *args, **kwargs)
 
 
