@@ -1,0 +1,7 @@
+pip install gym
+pip install cv2
+pip install opencv-python
+pip install joblib
+pip install gym[atari]
+pip install tqdm
+pip install cvxpy
