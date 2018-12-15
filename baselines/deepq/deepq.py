@@ -346,6 +346,7 @@ class BLRParams(object):
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 64
         self.first_time = True
+        self.no_prior = True
         self.a0 = 6
         self.b0 = 6
 
@@ -396,15 +397,17 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
     feat_dim = blr_param.feat_dim
 
     if blr_param.first_time:
-        phiphiT0 = [np.eye(feat_dim) for _ in range(num_actions)]
-        cov =  [np.eye(feat_dim) for _ in range(num_actions)]
+        phiphiT0 = [0.25*np.eye(feat_dim) for _ in range(num_actions)]
+        cov =  [4*np.eye(feat_dim) for _ in range(num_actions)]
         last_layer_weights *= 0
         blr_param.first_time = False
+    elif blr_param.no_prior:
+        phiphiT0 = phiphiT*0.99
     else:
         phiphiT0, cov = information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions,
                                              feat_dim)
     phiphiT = phiphiT0 #phiphiT is actually phiphiT0 + phiphiT
-    phiY *= 0
+    phiY *= 0.99
     YY = [0 for _ in range(num_actions)]
     n = [0 for _ in range(num_actions)]
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
@@ -562,6 +565,7 @@ def learn_neural_linear(env,
 
         yy = [0 for _ in range(num_actions)]
 
+        blr_update = 0
 
         for t in tqdm(range(total_timesteps)):
             if callback is not None:
@@ -600,12 +604,11 @@ def learn_neural_linear(env,
             # sample new w from posterior
             if t > 0 and t % blr_params.sample_w == 0:
                 for i in range(num_actions):
-                    sigma2_s = b_sig[i] * invgamma.rvs(a_sig[i])
-                    try:
-                        w_sample[i] = np.random.multivariate_normal(w_mu[i], sigma2_s*w_cov[i])
-                    except:
-                        print("using eye for w")
-                        w_sample[i] = np.eye(blr_params.feat_dim)
+                    if blr_params.no_prior:
+                        sigma2_s = 4
+                    else:
+                        sigma2_s = b_sig[i] * invgamma.rvs(a_sig[i])
+                    w_sample[i] = np.random.multivariate_normal(w_mu[i], sigma2_s*w_cov[i])
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
@@ -625,8 +628,11 @@ def learn_neural_linear(env,
                 # when target network updates we update our posterior belifes
                 # and transfering information from the old target
                 # to our new target
-                phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer, feat,
-                                                      feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
+                blr_update += 1
+                if blr_update == 10:
+                    phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer, feat,
+                                                          feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
+                    blr_update = 0
 
                 update_target()
                 w_target = w_mu
