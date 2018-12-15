@@ -229,7 +229,7 @@ def build_act_thompson(make_obs_ph, q_func, num_actions, scope="deepq", reuse=No
 `       See the top of the file for details.
     """
     with tf.variable_scope(scope, reuse=reuse):
-        observations_ph = U.ensure_tf_input(make_obs_ph("observation"))
+        observations_ph = make_obs_ph("observation")
 
         if method == "bdqn":
             phi_x = q_func(observations_ph.get(), num_actions, scope="q_func")
@@ -507,10 +507,10 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
 
     with tf.variable_scope(scope, reuse=reuse):
         # set up placeholders
-        obs_t_input = U.ensure_tf_input(make_obs_ph("obs_t"))
+        obs_t_input = make_obs_ph("obs_t")
         act_t_ph = tf.placeholder(tf.int32, [None], name="action")
         rew_t_ph = tf.placeholder(tf.float32, [None], name="reward")
-        obs_tp1_input = U.ensure_tf_input(make_obs_ph("obs_tp1"))
+        obs_tp1_input = make_obs_ph("obs_tp1")
         done_mask_ph = tf.placeholder(tf.float32, [None], name="done")
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
