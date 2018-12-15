@@ -677,12 +677,7 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
 
         # compute estimate of best possible value starting from state at t + 1
-        if double_q:
-            q_tp1_using_online_net = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
-            q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
-            q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
-        else:
-            q_tp1_best = tf.reduce_max(q_tp1, 1)
+        q_tp1_best = tf.reduce_max(q_tp1, 1)
 
         q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_best
 

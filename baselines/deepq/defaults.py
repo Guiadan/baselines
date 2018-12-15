@@ -9,11 +9,11 @@ def atari():
         learning_starts=10000,
         target_network_update_freq=1000,
         gamma=0.99,
-        prioritized_replay=True,
+        prioritized_replay=False,
         prioritized_replay_alpha=0.6,
         checkpoint_freq=10000,
         checkpoint_path=None,
-        dueling=True
+        dueling=False
     )
 
 def retro():
