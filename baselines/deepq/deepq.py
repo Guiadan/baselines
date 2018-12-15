@@ -426,13 +426,13 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
         inv = np.linalg.inv(phiphiT[i])
         w_mu[i] = np.array(np.dot(inv,phiY[i]+np.dot(phiphiT0[i],last_layer_weights[:,i])))
         w_cov[i] = inv
-        a[i] += n[i]/2
-        b[i] += 0.5*(  YY[i]
-                  + np.dot(last_layer_weights[:,i].T, np.dot(phiphiT0[action], last_layer_weights[:,i]))
-                  - np.dot(w_mu[i].T, np.dot(phiphiT[action], w_mu[i])))
-        if b[i] <= 0:
-            print("b of {} is {}".format(i,b[i]))
-            b[i] = blr_param.b0
+        # a[i] += n[i]/2
+        # b[i] += 0.5*(  YY[i]
+        #           + np.dot(last_layer_weights[:,i].T, np.dot(phiphiT0[action], last_layer_weights[:,i]))
+        #           - np.dot(w_mu[i].T, np.dot(phiphiT[action], w_mu[i])))
+        # if b[i] <= 0:
+        #     print("b of {} is {}".format(i,b[i]))
+        #     b[i] = blr_param.b0
     return phiphiT, phiY, w_mu, w_cov, a, b
 
 def learn_neural_linear(env,
