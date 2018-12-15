@@ -341,9 +341,8 @@ class BLRParams(object):
         self.sigma = 0.001 #W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = 0.01 # forgetting factor
-        self.update_posterior_param_freq = 100# freq for w_mu and w_cov updates
         self.sample_w = 100
-        self.batch_size = 30# batch size to do blr from
+        self.batch_size = 1000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 64
         self.first_time = True
@@ -437,237 +436,6 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
             b[i] = blr_param.b0
     return phiphiT, phiY, w_mu, w_cov, a, b
 
-
-def learn_neural_linear_old(env,
-          network,
-          seed=None,
-          lr=5e-4,
-          total_timesteps=100000,
-          buffer_size=10000,
-          exploration_fraction=0.1,
-          exploration_final_eps=0.02,
-          train_freq=1,
-          batch_size=32,
-          print_freq=100,
-          checkpoint_freq=10000,
-          checkpoint_path=None,
-          learning_starts=1000,
-          gamma=1.0,
-          target_network_update_freq=50,
-          prioritized_replay=False,
-          prioritized_replay_alpha=0.000000000000000000006,
-          prioritized_replay_beta0=0.4,
-          prioritized_replay_beta_iters=None,
-          prioritized_replay_eps=1e-6,
-          param_noise=False,
-          callback=None,
-          load_path=None,
-          thompson=True,
-          **network_kwargs
-            ):
-
-    sess = tf.Session()
-    sess.__enter__()
-
-    q_func = network
-    # capture the shape outside the closure so that the env object is not serialized
-    # by cloudpickle when serializing make_obs_ph
-    observation_space = env.observation_space
-
-    def make_obs_ph(name):
-        return ObservationInput(observation_space, name=name)
-
-    act_params = {
-        'make_obs_ph': make_obs_ph,
-        'q_func': q_func,
-        'num_actions': env.action_space.n,
-    }
-
-    def build_train_thompson_location():
-        pass
-    act, train, update_target, feat_dim, feat, feat_target, target, last_layer_weights = deepq.build_train_neural_linear(
-        make_obs_ph=make_obs_ph,
-        q_func=q_func,
-        num_actions=env.action_space.n,
-        optimizer=tf.train.AdamOptimizer(learning_rate=lr),
-        gamma=gamma,
-        grad_norm_clipping=10,
-        param_noise=param_noise,
-    )
-    act = ActWrapper(act, act_params)
-
-    sanity_check = False
-
-    # Create the replay buffer
-    replay_buffer = ReplayBuffer(buffer_size,reward_buf=True)
-    beta_schedule = None
-
-    # Create the schedule for exploration starting from 1.
-    exploration = LinearSchedule(schedule_timesteps=int(exploration_fraction * max_timesteps),
-                                 initial_p=1.0,
-                                 final_p=exploration_final_eps)
-
-    # Initialize the parameters and copy them to the target network.
-    U.initialize()
-
-
-
-    update_target()
-
-    episode_rewards = [0.0]
-    saved_mean_reward = None
-    obs = env.reset()
-
-    old_obs = obs
-    reset = True
-    with tempfile.TemporaryDirectory() as td:
-        model_saved = False
-        model_file = os.path.join(td, "model")
-        last_target_update = 0
-        test_interval = 5000
-        test_t = test_interval
-        lives = None
-        unique_rewards_flag = False
-
-        # BLR
-        # preliminearies
-        blr_params = BLRParams()
-        num_actions = env.action_space.n
-        w_mu = np.zeros((num_actions,feat_dim))
-        w_sample = np.random.normal(loc=0, scale=0.1, size=(num_actions, feat_dim))
-        w_target = np.random.normal(loc=0, scale=0.1, size=(num_actions, feat_dim))
-        w_cov = np.zeros((num_actions, feat_dim,feat_dim))
-        w_cov_decomp = w_cov
-        for a in range(num_actions):
-            w_cov[a] = np.eye(feat_dim)
-
-        phiphiT = np.zeros((num_actions,feat_dim,feat_dim))
-        for a in range(num_actions):
-            phiphiT[a] = np.eye(feat_dim)
-        phiY = np.zeros((num_actions,feat_dim))
-
-        a0 = 6
-        b0 = 6
-        a_sig = [a0 for _ in range(num_actions)]
-        b_sig = [b0 for _ in range(num_actions)]
-
-        yy = [0 for _ in range(num_actions)]
-
-        for t in tqdm(range(max_timesteps)):
-            if callback is not None:
-                if callback(locals(), globals()):
-                    break
-            # Take action and update exploration to the newest value
-            kwargs = {}
-            if not param_noise:
-                update_eps = exploration.value(t)
-                update_param_noise_threshold = 0.
-            else:
-                update_eps = 0.
-                # Compute the threshold such that the KL divergence between perturbed and non-perturbed
-                # policy is comparable to eps-greedy exploration with eps = exploration.value(t).
-                # See Appendix C.1 in Parameter Space Noise for Exploration, Plappert et al., 2017
-                # for detailed explanation.
-                update_param_noise_threshold = -np.log(1. - exploration.value(t) + exploration.value(t) / float(env.action_space.n))
-                kwargs['reset'] = reset
-                kwargs['update_param_noise_threshold'] = update_param_noise_threshold
-                kwargs['update_param_noise_scale'] = True
-
-            action = act(np.array(obs)[None], w_sample[None])
-            env_action = action
-            reset = False
-
-            new_obs, rew, done, info = env.step(env_action)
-
-            if lives is None:
-                lives = info['ale.lives']
-            if lives != info['ale.lives']:
-                rew = -1
-            # Store transition in the replay buffer.
-
-            replay_buffer.add(obs, env_action, rew, new_obs, float(done))
-            obs = new_obs
-
-            episode_rewards[-1] += rew
-            if done:
-                obs = env.reset()
-                lives = None
-                episode_rewards.append(0.0)
-                reset = True
-                if t > test_t:
-                    test_done = False
-                    test_rew = 0
-                    lives = 5
-                    while lives > 0 or not test_done:
-                        action = act(np.array(obs)[None], w_sample[None])
-                        env_action = action
-                        env.render()
-                        new_obs, rew, test_done, _ = env.step(env_action)
-                        lives = _['ale.lives']
-                        test_rew += rew
-                        obs = new_obs
-                    print("test reward is: {}".format(test_rew))
-                    test_t = t + test_interval
-                    obs = env.reset()
-
-            if t > 0 and t % blr_params.sample_w == 0:
-                for i in range(num_actions):
-                    sigma2_s = b_sig[i] * invgamma.rvs(a_sig[i])
-                    w_sample[a] = np.random.multivariate_normal(w_mu[a], sigma2_s*w_cov[a])
-
-
-            if t > learning_starts and t % train_freq == 0:
-
-                # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
-                obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
-                obses_t = obses_t / 255.
-                obses_tp1 = obses_tp1 / 255.
-
-                weights, batch_idxes = np.ones_like(rewards), None
-
-                td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
-
-            if t > replay_buffer._maxsize and t % target_network_update_freq == 0:
-                def call_for_BayesReg():
-                    pass
-
-                phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer, feat,
-                                                      feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
-
-
-            if t > learning_starts and t % target_network_update_freq == 0:
-                # Update target network periodically.
-                update_target()
-                w_target = w_mu
-
-            mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
-            num_episodes = len(episode_rewards)
-            if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
-                logger.record_tabular("steps", t)
-                logger.record_tabular("episodes", num_episodes)
-                logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
-                logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
-                logger.dump_tabular()
-
-            if (checkpoint_freq is not None and t > learning_starts and
-                    num_episodes > 100 and t % checkpoint_freq == 0):
-                if saved_mean_reward is None or mean_100ep_reward > saved_mean_reward:
-                    if print_freq is not None:
-                        logger.log("Saving model due to mean reward increase: {} -> {}".format(
-                                   saved_mean_reward, mean_100ep_reward))
-                    U.save_state(os.path.join(logger.get_dir(), "model"))
-                    U.save_state(model_file)
-                    #U.save_state(contingency_model_file)
-                    model_saved = True
-                    saved_mean_reward = mean_100ep_reward
-        if model_saved:
-            if print_freq is not None:
-                logger.log("Restored model with mean reward: {}".format(saved_mean_reward))
-            U.load_state(model_file)
-
-    return act
-
-
 def learn_neural_linear(env,
           network,
           seed=None,
@@ -701,9 +469,10 @@ def learn_neural_linear(env,
     sess = get_session()
     set_global_seeds(seed)
 
+    blr_params = BLRParams()
     q_func = deepq.models.cnn_to_mlp(
         convs=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-        hiddens=[64],
+        hiddens=[blr_params.feat_dim],
         dueling=bool(0),
     )
     # q_func = build_q_func(network, **network_kwargs)
@@ -774,7 +543,6 @@ def learn_neural_linear(env,
 
         # BLR
         # preliminearies
-        blr_params = BLRParams()
         num_actions = env.action_space.n
         w_mu = np.zeros((num_actions, feat_dim))
         w_sample = np.random.normal(loc=0, scale=0.1, size=(num_actions, feat_dim))
