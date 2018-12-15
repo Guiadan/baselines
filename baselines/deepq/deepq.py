@@ -408,6 +408,7 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
     phiY *= 0
     YY = [0 for _ in range(num_actions)]
     n = [0 for _ in range(num_actions)]
+    print(n)
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
     for j in range(batch_size):
         obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
@@ -422,6 +423,7 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
         n[int(action)] += 1
     a = [blr_param.a0 for _ in range(num_actions)]
     b = [blr_param.b0 for _ in range(num_actions)]
+    print(n)
     for i in range(num_actions):
         inv = np.linalg.inv(phiphiT[i])
         w_mu[i] = np.array(np.dot(inv,phiY[i]+np.dot(phiphiT0[i],last_layer_weights[:,i])))
