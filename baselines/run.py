@@ -57,6 +57,8 @@ def train(args, extra_args):
 
     total_timesteps = int(args.num_timesteps)
     seed = args.seed
+    print("args in train")
+    print(args)
 
     learn = get_learn_function(args.alg)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
@@ -198,6 +200,8 @@ def main(args):
         logger.configure(format_strs=[])
         rank = MPI.COMM_WORLD.Get_rank()
 
+    print("args.seed")
+    print(args.seed)
     model, env = train(args, extra_args)
     env.close()
 
