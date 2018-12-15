@@ -343,7 +343,7 @@ class BLRParams(object):
         self.alpha = 0.01 # forgetting factor
         self.update_posterior_param_freq = 100# freq for w_mu and w_cov updates
         self.sample_w = 100
-        self.batch_size = 3000 # batch size to do blr from
+        self.batch_size = 30# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 64
         self.first_time = True
@@ -432,7 +432,9 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
         b[i] += 0.5*(  YY[i]
                   + np.dot(last_layer_weights[:,i].T, np.dot(phiphiT0[action], last_layer_weights[:,i]))
                   - np.dot(w_mu[i].T, np.dot(phiphiT[action], w_mu[i])))
-
+        if b[i] <= 0:
+            print("b of {} is {}".format(i,b[i]))
+            b[i] = blr_param.b0
     return phiphiT, phiY, w_mu, w_cov, a, b
 
 
