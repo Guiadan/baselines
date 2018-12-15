@@ -428,8 +428,8 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
         w_cov[i] = inv
         a[i] += n[i]/2
         b[i] += 0.5*(  YY[i]
-                  + np.dot(last_layer_weights[:,i].T, np.dot(phiphiT0[action], last_layer_weights[:,i]))
-                  - np.dot(w_mu[i].T, np.dot(phiphiT[action], w_mu[i])))
+                  + np.dot(last_layer_weights[:,i].T, np.dot(phiphiT0[i], last_layer_weights[:,i]))
+                  - np.dot(w_mu[i].T, np.dot(phiphiT[i], w_mu[i])))
         if b[i] <= 0:
             print("b of {} is {}".format(i,b[i]))
             b[i] = blr_param.b0
@@ -543,16 +543,16 @@ def learn_neural_linear(env,
         # preliminearies
         num_actions = env.action_space.n
         w_mu = np.zeros((num_actions, feat_dim))
-        w_sample = np.random.normal(loc=0, scale=0.1, size=(num_actions, feat_dim))
-        w_target = np.random.normal(loc=0, scale=0.1, size=(num_actions, feat_dim))
+        w_sample = np.random.normal(loc=0, scale=0.25, size=(num_actions, feat_dim))
+        w_target = np.random.normal(loc=0, scale=0.25, size=(num_actions, feat_dim))
         w_cov = np.zeros((num_actions, feat_dim,feat_dim))
         w_cov_decomp = w_cov
-        for a in range(num_actions):
-            w_cov[a] = np.eye(feat_dim)
+        for i in range(num_actions):
+            w_cov[i] = 4*np.eye(feat_dim)
 
         phiphiT = np.zeros((num_actions,feat_dim,feat_dim))
-        for a in range(num_actions):
-            phiphiT[a] = np.eye(feat_dim)
+        for i in range(num_actions):
+            phiphiT[i] = 0.25*np.eye(feat_dim)
         phiY = np.zeros((num_actions,feat_dim))
 
         a0 = 6
