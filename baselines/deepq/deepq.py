@@ -720,7 +720,6 @@ def learn_neural_linear(env,
         grad_norm_clipping=10,
         param_noise=param_noise,
     )
-    print(sess.run(last_layer_weights))
     act_params = {
         'make_obs_ph': make_obs_ph,
         'q_func': q_func,
@@ -749,6 +748,7 @@ def learn_neural_linear(env,
     U.initialize()
     update_target()
 
+    print(sess.run(last_layer_weights))
     episode_rewards = [0.0]
     saved_mean_reward = None
     obs = env.reset()
