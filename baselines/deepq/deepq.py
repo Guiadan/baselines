@@ -720,7 +720,7 @@ def learn_neural_linear(env,
         grad_norm_clipping=10,
         param_noise=param_noise,
     )
-
+    print(sess.run(last_layer_weights))
     act_params = {
         'make_obs_ph': make_obs_ph,
         'q_func': q_func,
