@@ -428,8 +428,8 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
         inv = np.linalg.inv(phiphiT[i])
         w_mu[i] = np.array(np.dot(inv,phiY[i]+np.dot(phiphiT0[i],last_layer_weights[:,i])))
         w_cov[i] = inv
-        a += n[i]/2
-        b += 0.5*(  YY[i]
+        a[i] += n[i]/2
+        b[i] += 0.5*(  YY[i]
                   + np.dot(last_layer_weights[:,i].T, np.dot(phiphiT0[action], last_layer_weights[:,i]))
                   - np.dot(w_mu[i].T, np.dot(phiphiT[action], w_mu[i])))
 
