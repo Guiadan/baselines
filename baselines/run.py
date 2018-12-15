@@ -59,6 +59,8 @@ def train(args, extra_args):
 
     total_timesteps = int(args.num_timesteps)
     seed = args.seed
+    print("seed is:")
+    print(seed)
 
     learn = get_learn_function(args.alg)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
@@ -196,8 +198,8 @@ def main(args):
         args.seed = s
         if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
             rank = 0
-            logger.configure(dir='./baselines/deepq/exp/{}_seed_{}_blr_batch_{}_freq{}'.format(
-                            args.env,args.seed,blr_param.batch_size,args.target_network_update_freq))
+            logger.configure(dir='./baselines/deepq/exp/{}_seed_{}_blr_batch_{}_freq_1000'.format(
+                            args.env,args.seed,blr_param.batch_size))
         else:
             logger.configure(format_strs=[])
             rank = MPI.COMM_WORLD.Get_rank()
