@@ -407,7 +407,6 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
     phiY *= 0
     YY = [0 for _ in range(num_actions)]
     n = [0 for _ in range(num_actions)]
-    print(n)
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
     for j in range(batch_size):
         obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
@@ -521,7 +520,6 @@ def learn_neural_linear(env,
     U.initialize()
     update_target()
 
-    print(type(sess.run(last_layer_weights)))
     episode_rewards = [0.0]
     saved_mean_reward = None
     obs = env.reset()
@@ -623,7 +621,6 @@ def learn_neural_linear(env,
                 # when target network updates we update our posterior belifes
                 # and transfering information from the old target
                 # to our new target
-                print(last_layer_weights)
                 phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer, feat,
                                                       feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
 

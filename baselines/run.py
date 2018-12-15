@@ -15,6 +15,8 @@ from importlib import import_module
 
 from baselines.common.vec_env.vec_normalize import VecNormalize
 
+from baselines.deepq.deepq import BLRParams
+
 try:
     from mpi4py import MPI
 except ImportError:
@@ -57,8 +59,6 @@ def train(args, extra_args):
 
     total_timesteps = int(args.num_timesteps)
     seed = args.seed
-    print("args in train")
-    print(args)
 
     learn = get_learn_function(args.alg)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
@@ -188,44 +188,44 @@ def parse_cmdline_kwargs(args):
 
 def main(args):
     # configure logger, disable logging in child MPI processes (with rank > 0)
+    blr_param = BLRParams()
+    for s in range(5):
+        arg_parser = common_arg_parser()
+        args, unknown_args = arg_parser.parse_known_args(args)
+        extra_args = parse_cmdline_kwargs(unknown_args)
+        args.seed = s
+        if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
+            rank = 0
+            logger.configure(dir='./baselines/deepq/exp/{}_seed_{}_blr_batch_{}_freq{}'.format(
+                            args.env,args.seed,blr_param.batch_size,args.target_network_update_freq))
+        else:
+            logger.configure(format_strs=[])
+            rank = MPI.COMM_WORLD.Get_rank()
 
-    arg_parser = common_arg_parser()
-    args, unknown_args = arg_parser.parse_known_args(args)
-    extra_args = parse_cmdline_kwargs(unknown_args)
-    print(args)
-    if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
-        rank = 0
-        logger.configure(dir='./baselines/deepq/exp')
-    else:
-        logger.configure(format_strs=[])
-        rank = MPI.COMM_WORLD.Get_rank()
-
-    print("args.seed")
-    print(args.seed)
-    model, env = train(args, extra_args)
-    env.close()
-
-    if args.save_path is not None and rank == 0:
-        save_path = osp.expanduser(args.save_path)
-        model.save(save_path)
-
-    if args.play:
-        logger.log("Running trained model")
-        env = build_env(args)
-        obs = env.reset()
-        def initialize_placeholders(nlstm=128,**kwargs):
-            return np.zeros((args.num_env or 1, 2*nlstm)), np.zeros((1))
-        state, dones = initialize_placeholders(**extra_args)
-        while True:
-            actions, _, state, _ = model.step(obs,S=state, M=dones)
-            obs, _, done, _ = env.step(actions)
-            env.render()
-            done = done.any() if isinstance(done, np.ndarray) else done
-
-            if done:
-                obs = env.reset()
-
+        model, env = train(args, extra_args)
         env.close()
+
+        if args.save_path is not None and rank == 0:
+            save_path = osp.expanduser(args.save_path)
+            model.save(save_path)
+
+        if args.play:
+            logger.log("Running trained model")
+            env = build_env(args)
+            obs = env.reset()
+            def initialize_placeholders(nlstm=128,**kwargs):
+                return np.zeros((args.num_env or 1, 2*nlstm)), np.zeros((1))
+            state, dones = initialize_placeholders(**extra_args)
+            while True:
+                actions, _, state, _ = model.step(obs,S=state, M=dones)
+                obs, _, done, _ = env.step(actions)
+                env.render()
+                done = done.any() if isinstance(done, np.ndarray) else done
+
+                if done:
+                    obs = env.reset()
+
+            env.close()
 
     return model
 
