@@ -198,7 +198,7 @@ def main(args):
         args.seed = s
         if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
             rank = 0
-            logger.configure(dir='./baselines/deepq/exp/{}_seed_{}_blr_batch_{}_freq_1000'.format(
+            logger.configure(dir='./baselines/deepq/exp/{}_seed_{}_blr_batch_{}_freq_10000'.format(
                             args.env,args.seed,blr_param.batch_size))
         else:
             logger.configure(format_strs=[])
