@@ -648,7 +648,7 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         a bunch of functions to print debug data like q_values.
     """
 
-    act_f = build_act(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
+    act_f = build_act_thompson(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
 
     with tf.variable_scope(scope, reuse=reuse):
         # set up placeholders
