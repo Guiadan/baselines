@@ -341,7 +341,7 @@ class BLRParams(object):
         self.sigma = 0.001 #W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = 0.01 # forgetting factor
-        self.sample_w = 100
+        self.sample_w = 10
         self.batch_size = 1000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 64
