@@ -469,9 +469,10 @@ def learn_neural_linear(env,
     q_func = network
     # capture the shape outside the closure so that the env object is not serialized
     # by cloudpickle when serializing make_obs_ph
-    observation_space_shape = env.observation_space.shape
+    observation_space = env.observation_space
+
     def make_obs_ph(name):
-        return U.BatchInput(observation_space_shape, name=name)
+        return ObservationInput(observation_space, name=name)
 
     act_params = {
         'make_obs_ph': make_obs_ph,
