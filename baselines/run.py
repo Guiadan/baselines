@@ -193,10 +193,8 @@ def main(args):
 
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
         rank = 0
-        print('configure in if')
-        logger.configure()
+        logger.configure(dir='./exp')
     else:
-        print('configure in else')
         logger.configure(format_strs=[])
         rank = MPI.COMM_WORLD.Get_rank()
 
