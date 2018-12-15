@@ -601,7 +601,7 @@ def learn_neural_linear(env,
             if t > 0 and t % blr_params.sample_w == 0:
                 for i in range(num_actions):
                     sigma2_s = b_sig[i] * invgamma.rvs(a_sig[i])
-                    w_sample[a] = np.random.multivariate_normal(w_mu[a], sigma2_s*w_cov[a])
+                    w_sample[i] = np.random.multivariate_normal(w_mu[i], sigma2_s*w_cov[i])
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
