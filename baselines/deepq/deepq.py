@@ -697,7 +697,12 @@ def learn_neural_linear(env,
     sess = get_session()
     set_global_seeds(seed)
 
-    q_func = build_q_func(network, **network_kwargs)
+    q_func = deepq.models.cnn_to_mlp(
+        convs=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+        hiddens=[64],
+        dueling=bool(0),
+    )
+    # q_func = build_q_func(network, **network_kwargs)
 
     # capture the shape outside the closure so that the env object is not serialized
     # by cloudpickle when serializing make_obs_ph
