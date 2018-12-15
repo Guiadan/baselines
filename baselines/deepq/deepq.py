@@ -435,9 +435,10 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
 
 
 def learn_neural_linear(env,
-          q_func,
+	  network,
+          seed=None,
           lr=5e-4,
-          max_timesteps=100000,
+          total_timesteps=100000,
           buffer_size=10000,
           exploration_fraction=0.1,
           exploration_final_eps=0.02,
@@ -445,6 +446,7 @@ def learn_neural_linear(env,
           batch_size=32,
           print_freq=100,
           checkpoint_freq=10000,
+          checkpoint_path=None,
           learning_starts=1000,
           gamma=1.0,
           target_network_update_freq=50,
@@ -455,15 +457,16 @@ def learn_neural_linear(env,
           prioritized_replay_eps=1e-6,
           param_noise=False,
           callback=None,
-          multi_gamma=False,
-          embedding_network=None,
-          contingency_network=None,
+          load_path=None,
           local_scale=50,
-          thompson=True):
+          thompson=True,
+          **network_kwargs
+            ):
 
     sess = tf.Session()
     sess.__enter__()
 
+    q_func = network
     # capture the shape outside the closure so that the env object is not serialized
     # by cloudpickle when serializing make_obs_ph
     observation_space_shape = env.observation_space.shape
@@ -486,8 +489,6 @@ def learn_neural_linear(env,
         gamma=gamma,
         grad_norm_clipping=10,
         param_noise=param_noise,
-        embedding_network=embedding_network,
-        contingency_network=contingency_network
     )
     act = ActWrapper(act, act_params)
 
