@@ -424,10 +424,6 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
     b = [blr_param.b0 for _ in range(num_actions)]
     for i in range(num_actions):
         inv = np.linalg.inv(phiphiT[i])
-        print('debug')
-        print(last_layer_weights)
-        print(type(last_layer_weights))
-        print(len(last_layer_weights))
         w_mu[i] = np.array(np.dot(inv,phiY[i]+np.dot(phiphiT0[i],last_layer_weights[:,i])))
         w_cov[i] = inv
         a += n[i]/2
@@ -855,6 +851,7 @@ def learn_neural_linear(env,
                 # when target network updates we update our posterior belifes
                 # and transfering information from the old target
                 # to our new target
+                print(last_layer_weights)
                 phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer, feat,
                                                       feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run([last_layer_weights]))
 

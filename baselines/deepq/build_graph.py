@@ -671,8 +671,12 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         q_tp1, phi_target_xtp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func", reuse=True)
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
+        print("target_q_func_vars")
+        print(target_q_func_vars)
         last_layer_weights = target_q_func_vars[-2]
 
+        print("last_layer_weights")
+        print(last_layer_weights)
         # q scores for actions which we know were selected in the given state.
         q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
 
