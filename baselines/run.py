@@ -188,13 +188,14 @@ def parse_cmdline_kwargs(args):
 
 
 
-def main(args, seed=0):
+def main(args):
     # configure logger, disable logging in child MPI processes (with rank > 0)
     blr_param = BLRParams()
     arg_parser = common_arg_parser()
     args, unknown_args = arg_parser.parse_known_args(args)
     extra_args = parse_cmdline_kwargs(unknown_args)
-    args.seed = seed
+    print("Seed:")
+    print(args.seed)
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
         rank = 0
         logger.configure(dir='./baselines/deepq/exp/{}_seed_{}_blr_batch_{}_no_prior'.format(
@@ -231,6 +232,4 @@ def main(args, seed=0):
     return model
 
 if __name__ == '__main__':
-    for s in range(5):
-        print("seed is now: {}".format(s))
-        main(sys.argv, seed=s)
+    main(sys.argv)
