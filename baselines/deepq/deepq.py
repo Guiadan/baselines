@@ -403,11 +403,12 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
         blr_param.first_time = False
     elif blr_param.no_prior:
         phiphiT0 = phiphiT*0.99
+        phiY *= 0.99
     else:
         phiphiT0, cov = information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions,
                                              feat_dim)
+        phiY *= 0
     phiphiT = phiphiT0 #phiphiT is actually phiphiT0 + phiphiT
-    phiY *= 0.99
     YY = [0 for _ in range(num_actions)]
     n = [0 for _ in range(num_actions)]
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
