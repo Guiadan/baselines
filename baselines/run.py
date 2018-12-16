@@ -155,10 +155,9 @@ def get_alg_module(alg, submodule=None):
     return alg_module
 
 
-def get_learn_function(alg, nl=True):
+def get_learn_function(alg, nl=False):
     if nl:
         return get_alg_module(alg).learn_neural_linear
-    print("Failed")
     return get_alg_module(alg).learn
 
 
