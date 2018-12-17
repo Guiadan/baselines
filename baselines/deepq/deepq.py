@@ -268,6 +268,8 @@ def learn(env,
                 if callback(locals(), globals()):
                     break
             # Take action and update exploration to the newest value
+            if t % 5000 == 0:
+                print("{}/{}".format(t,total_timesteps))
             kwargs = {}
             if not param_noise:
                 update_eps = exploration.value(t)
