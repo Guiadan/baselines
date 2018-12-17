@@ -263,7 +263,7 @@ def learn(env,
             logger.log('Loaded model from {}'.format(load_path))
 
 
-        for t in tqdm(range(total_timesteps)):
+        for t in range(total_timesteps):
             if callback is not None:
                 if callback(locals(), globals()):
                     break
@@ -573,7 +573,7 @@ def learn_neural_linear(env,
 
         blr_update = 0
 
-        for t in tqdm(range(total_timesteps)):
+        for t in range(total_timesteps):
             if callback is not None:
                 if callback(locals(), globals()):
                     break
