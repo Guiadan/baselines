@@ -402,18 +402,17 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
     gamma = blr_param.gamma
     feat_dim = blr_param.feat_dim
 
-    if blr_param.first_time:
+    if blr_param.first_time or blr_param.no_prior:
         phiphiT0 = [0.25*np.eye(feat_dim) for _ in range(num_actions)]
         cov =  [4*np.eye(feat_dim) for _ in range(num_actions)]
-        last_layer_weights *= 0
         blr_param.first_time = False
-    elif blr_param.no_prior:
-        phiphiT0 = phiphiT*0.99
-        phiY *= 0.99
+    # elif blr_param.no_prior:
+    #     phiphiT0 = phiphiT*0.99
+    #     phiY *= 0.99
     else:
         phiphiT0, cov = information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions,
                                              feat_dim)
-        phiY *= 0
+    phiY *= 0
     phiphiT = phiphiT0 #phiphiT is actually phiphiT0 + phiphiT
     YY = [0 for _ in range(num_actions)]
     n = [0 for _ in range(num_actions)]
