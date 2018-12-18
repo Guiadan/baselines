@@ -8,4 +8,4 @@ for i in range(5):
             print('python ' + args)
             os.system('python ' + args)
     except KeyboardInterrupt:
-        sys.exit()
+            sys.exit()
