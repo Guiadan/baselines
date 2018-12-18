@@ -19,7 +19,6 @@ from baselines.deepq.utils import ObservationInput
 from baselines.common.tf_util import get_session
 from baselines.deepq.models import build_q_func
 
-
 class ActWrapper(object):
     def __init__(self, act, act_params):
         self._act = act
@@ -595,7 +594,7 @@ def learn_neural_linear(env,
 
         blr_update = 0
 
-        for t in range(total_timesteps):
+        for t in tqdm(range(total_timesteps)):
             if callback is not None:
                 if callback(locals(), globals()):
                     break
