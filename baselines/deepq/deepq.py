@@ -97,7 +97,7 @@ def learn(env,
           seed=None,
           lr=5e-4,
           total_timesteps=100000,
-          buffer_size=50000,
+          buffer_size=1000000,
           exploration_fraction=0.1,
           exploration_final_eps=0.02,
           train_freq=1,
@@ -105,7 +105,7 @@ def learn(env,
           print_freq=100,
           checkpoint_freq=10000,
           checkpoint_path=None,
-          learning_starts=1000,
+          learning_starts=50000,
           gamma=1.0,
           target_network_update_freq=500,
           prioritized_replay=False,
@@ -348,8 +348,8 @@ class BLRParams(object):
     def __init__(self):
         self.sigma = 0.001 #W prior variance
         self.sigma_n = 1 # noise variance
-        self.alpha = 0.01 # forgetting factor
-        self.sample_w = 10
+        self.alpha = .01 # forgetting factor
+        self.sample_w = 1000
         self.batch_size = 1000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 64
@@ -396,21 +396,51 @@ def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batc
             cov.append(prior)
     return precisions_return, cov
 
-def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_feat, target, num_actions, blr_param, w_mu, w_cov, last_layer_weights):
+def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_feat, target, num_actions, blr_param, w_mu, w_cov, last_layer_weights):
     # dqn_ and target_dqn_ are feature extractors for the dqn and target dqn respectivley
     # in the neural linear settings target are the old features and dqn are the new features
     # last_layer_weights are the target last layer weights
+    print("with NO prior")
     batch_size = blr_param.batch_size
     gamma = blr_param.gamma
     feat_dim = blr_param.feat_dim
 
-    if blr_param.first_time or blr_param.no_prior:
-        phiphiT0 = [0.25*np.eye(feat_dim) for _ in range(num_actions)]
+    phiY *= (1-blr_param.alpha)
+    phiphiT *= (1-blr_param.alpha)
+
+    n = [0 for _ in range(num_actions)] #sanity check
+    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(len(replay_buffer))
+    for j in range(batch_size):
+        obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
+        obs_t = obs_t / 255.
+        obs_tp1 = obs_tp1 / 255.
+        obs_feat = dqn_feat(obs_t[None]).reshape((feat_dim,1))
+        phiphiT[int(action)] += np.dot(obs_feat,obs_feat.transpose())
+        y = (reward +(1.-done) * gamma * np.max(target(obs_tp1[None])))
+        phiY[int(action)] += (obs_feat*y).reshape((feat_dim,))
+        n[int(action)] += 1
+    a = [blr_param.a0 for _ in range(num_actions)]
+    b = [blr_param.b0 for _ in range(num_actions)]
+    print(n)
+    for i in range(num_actions):
+        inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
+        w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
+        w_cov[i] = blr_param.sigma*inv
+    return phiphiT, phiY, w_mu, w_cov, a, b
+
+def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_feat, target, num_actions, blr_param, w_mu, w_cov, last_layer_weights):
+    # dqn_ and target_dqn_ are feature extractors for the dqn and target dqn respectivley
+    # in the neural linear settings target are the old features and dqn are the new features
+    # last_layer_weights are the target last layer weights
+    print("with prior")
+    batch_size = blr_param.batch_size
+    gamma = blr_param.gamma
+    feat_dim = blr_param.feat_dim
+
+    if blr_param.first_time:
+        phiphiT0 = [0.01*np.eye(feat_dim) for _ in range(num_actions)]
         cov =  [4*np.eye(feat_dim) for _ in range(num_actions)]
         blr_param.first_time = False
-    # elif blr_param.no_prior:
-    #     phiphiT0 = phiphiT*0.99
-    #     phiY *= 0.99
     else:
         phiphiT0, cov = information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions,
                                              feat_dim)
@@ -418,7 +448,7 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
     phiphiT = phiphiT0 #phiphiT is actually phiphiT0 + phiphiT
     YY = [0 for _ in range(num_actions)]
     n = [0 for _ in range(num_actions)]
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
+    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(len(replay_buffer))
     for j in range(batch_size):
         obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
         obs_t = obs_t / 255.
@@ -437,13 +467,6 @@ def BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dq
         inv = np.linalg.inv(phiphiT[i])
         w_mu[i] = np.array(np.dot(inv,phiY[i]+np.dot(phiphiT0[i],last_layer_weights[:,i])))
         w_cov[i] = inv
-        # a[i] += n[i]/2
-        # b[i] += 0.5*(  YY[i]
-        #           + np.dot(last_layer_weights[:,i].T, np.dot(phiphiT0[action], last_layer_weights[:,i]))
-        #           - np.dot(w_mu[i].T, np.dot(phiphiT[action], w_mu[i])))
-        # if b[i] <= 0:
-        #     print("b of {} is {}".format(i,b[i]))
-        #     b[i] = blr_param.b0
     return phiphiT, phiY, w_mu, w_cov, a, b
 
 def learn_neural_linear(env,
@@ -557,14 +580,11 @@ def learn_neural_linear(env,
         w_sample = np.random.normal(loc=0, scale=0.1, size=(num_actions, feat_dim))
         w_target = np.random.normal(loc=0, scale=0.1, size=(num_actions, feat_dim))
         w_cov = np.zeros((num_actions, feat_dim,feat_dim))
-        w_cov_decomp = w_cov
         for a in range(num_actions):
             w_cov[a] = np.eye(feat_dim)
 
         phiphiT = np.zeros((num_actions,feat_dim,feat_dim))
-        for a in range(num_actions):
-            phiphiT[a] = np.eye(feat_dim)
-        phiY = np.zeros((num_actions,feat_dim))
+        phiY = np.zeros((num_actions, feat_dim))
 
         a0 = 6
         b0 = 6
@@ -599,6 +619,10 @@ def learn_neural_linear(env,
             env_action = action
             reset = False
             new_obs, rew, done, _ = env.step(env_action)
+
+            # clipping like in BDQN
+            rew = np.sign(rew)
+
             # Store transition in the replay buffer.
             replay_buffer.add(obs, action, rew, new_obs, float(done))
             obs = new_obs
@@ -613,10 +637,10 @@ def learn_neural_linear(env,
             if t > 0 and t % blr_params.sample_w == 0:
                 for i in range(num_actions):
                     if blr_params.no_prior:
-                        sigma2_s = 4
+                        w_sample[i] = np.random.multivariate_normal(w_mu[i], w_cov[i])
                     else:
                         sigma2_s = b_sig[i] * invgamma.rvs(a_sig[i])
-                    w_sample[i] = np.random.multivariate_normal(w_mu[i], sigma2_s*w_cov[i])
+                        w_sample[i] = np.random.multivariate_normal(w_mu[i], sigma2_s*w_cov[i])
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
@@ -638,8 +662,13 @@ def learn_neural_linear(env,
                 # to our new target
                 blr_update += 1
                 if blr_update == 10:
-                    phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer, feat,
-                                                          feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
+                    print("updating posterior parameters")
+                    if blr_params.no_prior:
+                        phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer, feat,
+                                                                                     feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
+                    else:
+                        phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer, feat,
+                                                              feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
                     blr_update = 0
 
                 update_target()

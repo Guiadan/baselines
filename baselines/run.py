@@ -189,6 +189,8 @@ def parse_cmdline_kwargs(args):
 
 def main(args):
     # configure logger, disable logging in child MPI processes (with rank > 0)
+    print("args passed to main")
+    print(args)
     blr_param = BLRParams()
     arg_parser = common_arg_parser()
     args, unknown_args = arg_parser.parse_known_args(args)
