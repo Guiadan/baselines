@@ -409,7 +409,7 @@ def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_
 
     n = [0 for _ in range(num_actions)] #sanity check
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(len(replay_buffer))
-    for j in range(batch_size):
+    for j in range(len(replay_buffer)):
         obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
         obs_t = obs_t / 255.
         obs_tp1 = obs_tp1 / 255.
