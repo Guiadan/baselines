@@ -231,7 +231,7 @@ def build_act_thompson(make_obs_ph, q_func, num_actions, scope="deepq", reuse=No
     with tf.variable_scope(scope, reuse=reuse):
         observations_ph = make_obs_ph("observation")
 
-        _, phi_x = q_func(observations_ph.get(), num_actions, scope="target_q_func")
+        _, phi_x = q_func(observations_ph.get(), num_actions, scope="q_func")
 
         feat_dim = phi_x.shape[1].value
         w_ph = tf.placeholder(tf.float32, [None] + [num_actions, feat_dim], name="w")
@@ -449,6 +449,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
             q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
         else:
+            print("building dqn")
             q_tp1_best = tf.reduce_max(q_tp1, 1)
         q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_best
 
@@ -564,7 +565,7 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         # q network evaluation
-        q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func")
+        q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
         # blr additions
@@ -572,7 +573,7 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         w_ph = tf.placeholder(tf.float32, [None] + [num_actions, feat_dim], name="w")
 
         # target q network evalution
-        q_tp1, phi_target_xtp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func", reuse=True)
+        q_tp1, phi_target_xtp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
         last_layer_weights = target_q_func_vars[-2]
@@ -582,11 +583,15 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
 
         # compute estimate of best possible value starting from state at t + 1
         # double dqn learning
-        print("building ddqn for neural linear")
-        q_tp1_using_online_net, _ = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
-        q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
-        q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
-        #q_tp1_best = tf.reduce_max(q_tp1, 1) DQN normal loss
+        if double_q:
+            print("building ddqn loss for neural linear")
+            q_tp1_using_online_net, _ = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
+            q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
+            q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
+        else:
+            print("building dqn loss for neural linear")
+            q_tp1_best = tf.reduce_max(q_tp1, 1)
+
 
         q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_best
 

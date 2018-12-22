@@ -62,7 +62,7 @@ def train(args, extra_args):
     print("seed is:")
     print(seed)
 
-    learn = get_learn_function(args.alg)
+    learn = get_learn_function(args.alg, args.neural_linear)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
     alg_kwargs.update(extra_args)
 
@@ -75,6 +75,10 @@ def train(args, extra_args):
     else:
         if alg_kwargs.get('network') is None:
             alg_kwargs['network'] = get_default_network(env_type)
+
+
+    alg_kwargs.update({'ddqn': args.ddqn})
+    alg_kwargs.update({'prior': args.prior})
 
     print('Training {} on {}:{} with arguments \n{}'.format(args.alg, env_type, env_id, alg_kwargs))
 
@@ -157,7 +161,9 @@ def get_alg_module(alg, submodule=None):
 
 def get_learn_function(alg, nl=True):
     if nl:
+        print("building neural linear")
         return get_alg_module(alg).learn_neural_linear
+    print("building regular model (not neural linear)")
     return get_alg_module(alg).learn
 
 
@@ -199,8 +205,8 @@ def main(args):
     print(args.seed)
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
         rank = 0
-        logger.configure(dir='./baselines/deepq/exp/{}_seed_{}_blr_batch_{}_no_prior'.format(
-                        args.env,args.seed,blr_param.batch_size))
+        logger.configure(dir='./baselines/deepq/exp/{}/{}/seed_{}'.format(
+                        args.env, args.exp_name, args.seed), format_strs=["tensorboard", "stdout"])
     else:
         logger.configure(format_strs=[])
         rank = MPI.COMM_WORLD.Get_rank()

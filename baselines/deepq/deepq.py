@@ -101,7 +101,7 @@ def learn(env,
           exploration_final_eps=0.02,
           train_freq=1,
           batch_size=32,
-          print_freq=100,
+          print_freq=10,#100
           checkpoint_freq=10000,
           checkpoint_path=None,
           learning_starts=50000,
@@ -115,6 +115,8 @@ def learn(env,
           param_noise=False,
           callback=None,
           load_path=None,
+          ddqn=False,
+          prior=False,
           **network_kwargs
           ):
     """Train a deepq model.
@@ -211,7 +213,8 @@ def learn(env,
         optimizer=tf.train.AdamOptimizer(learning_rate=lr),
         gamma=gamma,
         grad_norm_clipping=10,
-        param_noise=param_noise
+        param_noise=param_noise,
+        double_q=ddqn
     )
 
     act_params = {
@@ -262,13 +265,13 @@ def learn(env,
             logger.log('Loaded model from {}'.format(load_path))
 
 
-        for t in range(total_timesteps):
+        for t in tqdm(range(total_timesteps)):
             if callback is not None:
                 if callback(locals(), globals()):
                     break
             # Take action and update exploration to the newest value
-            if t % 5000 == 0:
-                print("{}/{}".format(t,total_timesteps))
+            # if t % 10000 == 0:
+            #     print("{}/{}".format(t,total_timesteps))
             kwargs = {}
             if not param_noise:
                 update_eps = exploration.value(t)
@@ -315,12 +318,13 @@ def learn(env,
                 update_target()
 
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
+            mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
             num_episodes = len(episode_rewards)
             if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
                 logger.record_tabular("steps", t)
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
-                logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
+                logger.record_tabular("mean 10 episode reward", mean_100ep_reward)
                 logger.dump_tabular()
 
             if (checkpoint_freq is not None and t > learning_starts and
@@ -356,7 +360,6 @@ class BLRParams(object):
         self.no_prior = True
         self.a0 = 6
         self.b0 = 6
-
 
 def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim):
     d = [[] for i in range(num_actions)]
@@ -395,7 +398,44 @@ def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batc
             cov.append(prior)
     return precisions_return, cov
 
-def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_feat, target, num_actions, blr_param, w_mu, w_cov, last_layer_weights):
+def information_transfer_old(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim):
+    d = [[] for i in range(num_actions)]
+    phi = [[] for i in range(num_actions)]
+    for j in range(batch_size):
+        obs_t, action, reward, obs_tp1, done = replay_buffer.sample(1)
+
+        # confidence scores for old data
+        c = target_dqn_feat(obs_tp1).reshape((feat_dim, 1))
+
+        d[int(action)].append(np.dot(np.dot(c.T, phiphiT[int(action)]), c))
+
+
+        # new data correlations
+        c = dqn_feat(obs_tp1).reshape((feat_dim, 1))
+        phi[int(action)].append(np.outer(c, c))
+
+    precisions_return = []
+    cov = []
+    prior = (0.0001) * np.eye(feat_dim)
+    for a in range(num_actions):
+        if d[a] != []:
+            X = cvx.Variable((feat_dim, feat_dim), PSD=True)
+            # Form objective.
+            obj = cvx.Minimize(sum([(cvx.trace(X * phi[a][i]) - np.squeeze(d[a][i])) ** 2 for i in range(len(d[a]))]))
+            prob = cvx.Problem(obj)
+            prob.solve()
+            if X.value is None:
+                precisions_return.append(np.linalg.inv(prior))
+                cov.append(prior)
+            else:
+                precisions_return.append(np.linalg.inv(X.value + prior))
+                cov.append(X.value + prior)
+        else:
+            precisions_return.append(np.linalg.inv(prior))
+            cov.append(prior)
+    return precisions_return, cov
+
+def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_feat, target, num_actions, blr_param, w_mu, w_cov, last_layer_weights, prior="no prior"):
     # dqn_ and target_dqn_ are feature extractors for the dqn and target dqn respectivley
     # in the neural linear settings target are the old features and dqn are the new features
     # last_layer_weights are the target last layer weights
@@ -404,20 +444,39 @@ def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_
     gamma = blr_param.gamma
     feat_dim = blr_param.feat_dim
 
-    phiY *= (1-blr_param.alpha)
-    phiphiT *= (1-blr_param.alpha)
+    if prior == "no prior":
+        print("no prior")
+        phiY *= (1-blr_param.alpha)*0
+        phiphiT *= (1-blr_param.alpha)*0
+    elif prior == "simple":
+        print("simple prior")
+        phiY *= (1-blr_param.alpha)
+        phiphiT *= (1-blr_param.alpha)
+    elif prior == "sdp":
+        print("SDP prior")
 
-    n = [0 for _ in range(num_actions)] #sanity check
+    n = np.zeros(num_actions)
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(len(replay_buffer))
-    for j in range(len(replay_buffer)):
-        obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
-        obs_t = obs_t / 255.
-        obs_tp1 = obs_tp1 / 255.
-        obs_feat = dqn_feat(obs_t[None]).reshape((feat_dim,1))
-        phiphiT[int(action)] += np.dot(obs_feat,obs_feat.transpose())
-        y = (reward +(1.-done) * gamma * np.max(target(obs_tp1[None])))
-        phiY[int(action)] += (obs_feat*y).reshape((feat_dim,))
-        n[int(action)] += 1
+    mini_batch_size = 256
+    for j in range(len(replay_buffer) // mini_batch_size):
+        # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
+        start_idx = j*mini_batch_size
+        end_idx = (j+1)*mini_batch_size if (j+1)*mini_batch_size < len(replay_buffer) else -1
+        obs_t = obses_t[start_idx:end_idx] / 255.
+        action = actions[start_idx:end_idx]
+        reward = rewards[start_idx:end_idx]
+        obs_tp1 = obses_tp1[start_idx:end_idx] / 255.
+        done = dones[start_idx:end_idx]
+
+        obs_feat = dqn_feat(obs_t).reshape((obs_t.shape[0], feat_dim))
+        # calculating target
+        y = (reward +(1.-done) * gamma * np.max(target(obs_tp1)))
+        for k in range(num_actions):
+            if obs_feat[action == k].shape[0] < 1:
+                continue
+            phiphiT[k] += np.dot(obs_feat[action == k].transpose(),obs_feat[action == k])
+            phiY[k] += np.dot(y[action == k], obs_feat[action == k]).reshape((feat_dim,))
+            n[k] += obs_feat[action == k].shape[0]
     a = [blr_param.a0 for _ in range(num_actions)]
     b = [blr_param.b0 for _ in range(num_actions)]
     print(n)
@@ -478,10 +537,10 @@ def learn_neural_linear(env,
           exploration_final_eps=0.02,
           train_freq=1,
           batch_size=32,
-          print_freq=100,
+          print_freq=10,#100
           checkpoint_freq=10000,
           checkpoint_path=None,
-          learning_starts=1000,
+          learning_starts=999,
           gamma=1.0,
           target_network_update_freq=500,
           prioritized_replay=False,
@@ -492,6 +551,8 @@ def learn_neural_linear(env,
           param_noise=False,
           callback=None,
           load_path=None,
+          ddqn=False,
+          prior="no prior",
           **network_kwargs
                         ):
     #Train a deepq model.
@@ -524,6 +585,7 @@ def learn_neural_linear(env,
         gamma=gamma,
         grad_norm_clipping=10,
         param_noise=param_noise,
+        double_q=ddqn
     )
     act_params = {
         'make_obs_ph': make_obs_ph,
@@ -598,6 +660,8 @@ def learn_neural_linear(env,
             if callback is not None:
                 if callback(locals(), globals()):
                     break
+            # if t % 1000 == 0:
+            #     print("{}/{}".format(t,total_timesteps))
             # Take action and update exploration to the newest value
             kwargs = {}
             if not param_noise:
@@ -660,11 +724,11 @@ def learn_neural_linear(env,
                 # and transfering information from the old target
                 # to our new target
                 blr_update += 1
-                if blr_update == 10:
+                if blr_update == 1: #10
                     print("updating posterior parameters")
                     if blr_params.no_prior:
                         phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer, feat,
-                                                                                     feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
+                                                                                     feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights),prior)
                     else:
                         phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer, feat,
                                                               feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
@@ -674,12 +738,13 @@ def learn_neural_linear(env,
                 w_target = w_mu
 
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
+            mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
             num_episodes = len(episode_rewards)
             if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
                 logger.record_tabular("steps", t)
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
-                logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
+                logger.record_tabular("mean 10 episode reward", mean_10ep_reward)
                 logger.dump_tabular()
 
             if (checkpoint_freq is not None and t > learning_starts and
