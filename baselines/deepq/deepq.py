@@ -19,6 +19,7 @@ from baselines.deepq.utils import ObservationInput
 from baselines.common.tf_util import get_session
 from baselines.deepq.models import build_q_func
 
+from tqdm import tqdm
 class ActWrapper(object):
     def __init__(self, act, act_params):
         self._act = act
@@ -265,7 +266,7 @@ def learn(env,
             logger.log('Loaded model from {}'.format(load_path))
 
 
-        for t in tqdm(range(total_timesteps)):
+        for t in range(total_timesteps):
             if callback is not None:
                 if callback(locals(), globals()):
                     break
@@ -315,12 +316,14 @@ def learn(env,
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
+                print("updateing target, steps {}".format(t))
                 update_target()
 
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
             num_episodes = len(episode_rewards)
-            if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
+            # if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
+            if t % 1000 == 0:
                 logger.record_tabular("steps", t)
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
@@ -435,12 +438,11 @@ def information_transfer_old(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
             cov.append(prior)
     return precisions_return, cov
 
-def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_feat, target, num_actions, blr_param, w_mu, w_cov, last_layer_weights, prior="no prior"):
+def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_feat, target, num_actions, blr_param,
+                    w_mu, w_cov, last_layer_weights, prior="no prior", blr_ops=None, blr_helpers=None):
     # dqn_ and target_dqn_ are feature extractors for the dqn and target dqn respectivley
     # in the neural linear settings target are the old features and dqn are the new features
     # last_layer_weights are the target last layer weights
-    print("with NO prior")
-    batch_size = blr_param.batch_size
     gamma = blr_param.gamma
     feat_dim = blr_param.feat_dim
 
@@ -457,8 +459,8 @@ def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_
 
     n = np.zeros(num_actions)
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(len(replay_buffer))
-    mini_batch_size = 256
-    for j in range(len(replay_buffer) // mini_batch_size):
+    mini_batch_size = 10000
+    for j in tqdm(range(len(replay_buffer) // mini_batch_size)):
         # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
         start_idx = j*mini_batch_size
         end_idx = (j+1)*mini_batch_size if (j+1)*mini_batch_size < len(replay_buffer) else -1
@@ -468,18 +470,28 @@ def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_
         obs_tp1 = obses_tp1[start_idx:end_idx] / 255.
         done = dones[start_idx:end_idx]
 
-        obs_feat = dqn_feat(obs_t).reshape((obs_t.shape[0], feat_dim))
+        # obs_feat = dqn_feat(obs_t).reshape((obs_t.shape[0], feat_dim))
         # calculating target
-        y = (reward +(1.-done) * gamma * np.max(target(obs_tp1)))
+        # y = (reward +(1.-done) * gamma * np.max(target(obs_tp1)))
         for k in range(num_actions):
-            if obs_feat[action == k].shape[0] < 1:
+            if obs_t[action == k].shape[0] < 1:
                 continue
-            phiphiT[k] += np.dot(obs_feat[action == k].transpose(),obs_feat[action == k])
-            phiY[k] += np.dot(y[action == k], obs_feat[action == k]).reshape((feat_dim,))
-            n[k] += obs_feat[action == k].shape[0]
+            phiphiTk, phiYk = blr_ops(obs_t[action == k], action[action == k], reward[action == k], obs_tp1[action == k], done[action == k])
+            phiphiT[k] += phiphiTk
+            phiY[k] += phiYk
+            # phiphiT[k] += np.dot(obs_feat[action == k].transpose(),obs_feat[action == k])
+            # phiY[k] += np.dot(y[action == k], obs_feat[action == k]).reshape((feat_dim,))
+            n[k] += obs_t[action == k].shape[0]
     a = [blr_param.a0 for _ in range(num_actions)]
     b = [blr_param.b0 for _ in range(num_actions)]
-    print(n)
+    print(n, np.sum(n))
+    # prior_tensor = np.zeros((num_actions,feat_dim,feat_dim))
+    # for i in range(num_actions):
+    #     prior_tensor[i] = np.eye(feat_dim)
+    # prior_tensor *= 1/blr_param.sigma
+    # inv, w_mu = blr_helpers(prior_tensor + phiphit/blr_param.sigma_n,phiy)
+    # w_mu *= 1/blr_param.sigma_n
+    # w_cov = blr_param.sigma*inv
     for i in range(num_actions):
         inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
         w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
@@ -577,7 +589,7 @@ def learn_neural_linear(env,
     def make_obs_ph(name):
         return ObservationInput(observation_space, name=name)
 
-    act, train, update_target, feat_dim, feat, feat_target, target, last_layer_weights = deepq.build_train_neural_linear(
+    act, train, update_target, feat_dim, feat, feat_target, target, last_layer_weights, blr_ops, blr_helpers = deepq.build_train_neural_linear(
         make_obs_ph=make_obs_ph,
         q_func=q_func,
         num_actions=env.action_space.n,
@@ -656,7 +668,7 @@ def learn_neural_linear(env,
 
         blr_update = 0
 
-        for t in tqdm(range(total_timesteps)):
+        for t in range(total_timesteps):
             if callback is not None:
                 if callback(locals(), globals()):
                     break
@@ -724,23 +736,25 @@ def learn_neural_linear(env,
                 # and transfering information from the old target
                 # to our new target
                 blr_update += 1
-                if blr_update == 1: #10
+                if blr_update == 10: #10
                     print("updating posterior parameters")
                     if blr_params.no_prior:
                         phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer, feat,
-                                                                                     feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights),prior)
+                                                                                     feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights),prior, blr_ops, blr_helpers)
                     else:
                         phiphiT, phiY, w_mu, w_cov, a_sig, b_sig = BayesRegWithPrior(phiphiT, phiY, w_target, replay_buffer, feat,
                                                               feat_target, target, num_actions, blr_params, w_mu, w_cov, sess.run(last_layer_weights))
                     blr_update = 0
 
+                print("updateing target, steps {}".format(t))
                 update_target()
                 w_target = w_mu
 
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
             num_episodes = len(episode_rewards)
-            if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
+            # if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
+            if t % 10000 == 0: #1000
                 logger.record_tabular("steps", t)
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)

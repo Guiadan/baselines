@@ -198,7 +198,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
             return _act(ob, stochastic, update_eps)
         return act
 
-def build_act_thompson(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None, method="neural linear"):
+def build_act_thompson(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None, actor="q_func"):
     """Creates the act function:
 
     Parameters
@@ -231,7 +231,7 @@ def build_act_thompson(make_obs_ph, q_func, num_actions, scope="deepq", reuse=No
     with tf.variable_scope(scope, reuse=reuse):
         observations_ph = make_obs_ph("observation")
 
-        _, phi_x = q_func(observations_ph.get(), num_actions, scope="q_func")
+        _, phi_x = q_func(observations_ph.get(), num_actions, scope=actor)
 
         feat_dim = phi_x.shape[1].value
         w_ph = tf.placeholder(tf.float32, [None] + [num_actions, feat_dim], name="w")
@@ -498,7 +498,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         return act_f, train, update_target, {'q_values': q_values}
 
 def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
-    double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None):
+    double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None, actor='dqn'):
     """Creates the train function:
 
     Parameters
@@ -553,7 +553,10 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         a bunch of functions to print debug data like q_values.
     """
 
-    act_f = build_act_thompson(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
+    if actor == 'target':
+        act_f = build_act_thompson(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse, actor="target_q_func")
+    else:
+        act_f = build_act_thompson(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse, actor="q_func")
 
     with tf.variable_scope(scope, reuse=reuse):
         # set up placeholders
@@ -565,15 +568,18 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         # q network evaluation
-        q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)
+        if actor == 'target':
+            print("actor is target")
+            q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func")
+            q_tp1, phi_target_xtp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func", reuse=True)
+        else:
+            print("actor is dqn")
+            q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)
+            q_tp1, phi_target_xtp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
+
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
-        # blr additions
-        feat_dim = phi_xt.shape[1].value
-        w_ph = tf.placeholder(tf.float32, [None] + [num_actions, feat_dim], name="w")
-
         # target q network evalution
-        q_tp1, phi_target_xtp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
         last_layer_weights = target_q_func_vars[-2]
@@ -602,6 +608,18 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         td_error = q_t_selected - tf.stop_gradient(q_t_selected_target)
         errors = U.huber_loss(td_error)
         weighted_error = tf.reduce_mean(importance_weights_ph * errors)
+
+        # tf.matmul(tf.expand_dims(phi_xt,-1),tf.expand_dims(phi_xt,1))
+        # blr additions
+        phiphiTop = tf.matmul(tf.transpose(phi_xt), phi_xt)
+        phiYop = tf.squeeze(tf.matmul(tf.expand_dims(q_t_selected_target,0), phi_xt))
+        feat_dim = phi_xt.shape[1].value
+        #carefull batch size here is actually action size
+        precision_mat = tf.placeholder(tf.float64, [None] + [feat_dim, feat_dim], name="phiphiT")
+        phiY = tf.placeholder(tf.float64, [None] + [feat_dim, 1], name="phiphiT")
+        covariance_mat = tf.matrix_inverse(precision_mat)
+        w_mu = tf.squeeze(tf.matmul(covariance_mat,phiY),axis=-1)
+        w_ph = tf.placeholder(tf.float32, [None] + [num_actions, feat_dim], name="w")
 
         # compute optimization op (potentially with gradient clipping)
         if grad_norm_clipping is not None:
@@ -641,5 +659,20 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         feat = U.function([obs_t_input], phi_xt)
         feat_target = U.function([obs_tp1_input], phi_target_xtp1)
 
-        return act_f, train, update_target, feat_dim, feat, feat_target, target_q_values, last_layer_weights
+
+        # Create callable functions
+        blr_ops = U.function(
+            inputs=[
+                obs_t_input,
+                act_t_ph,
+                rew_t_ph,
+                obs_tp1_input,
+                done_mask_ph,
+                importance_weights_ph
+            ],
+            outputs=[phiphiTop,phiYop]
+        )
+        blr_helpers = U.function([precision_mat,phiY],[covariance_mat, w_mu])
+
+        return act_f, train, update_target, feat_dim, feat, feat_target, target_q_values, last_layer_weights, blr_ops, blr_helpers
 
