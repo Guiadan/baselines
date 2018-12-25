@@ -356,7 +356,7 @@ class BLRParams(object):
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
         self.sample_w = 1000
-        self.batch_size = 1000# batch size to do blr from
+        self.batch_size = 300000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 64
         self.first_time = True
@@ -458,7 +458,8 @@ def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_
         print("SDP prior")
 
     n = np.zeros(num_actions)
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(len(replay_buffer))
+    n_samples = blr_param.batch_size if len(replay_buffer) > blr_param.batch_size else len(replay_buffer)
+    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
     mini_batch_size = 10000
     for j in tqdm(range(len(replay_buffer) // mini_batch_size)):
         # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
