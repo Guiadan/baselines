@@ -123,7 +123,7 @@ def learn(env,
           ddqn=False,
           prior=False,
           save_freq=True,
-          save_freq_rate=100000,
+          save_freq_rate=1000000,
           **network_kwargs
           ):
     """Train a deepq model.
