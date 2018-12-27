@@ -20,6 +20,8 @@ from baselines.common.tf_util import get_session
 from baselines.deepq.models import build_q_func
 
 from tqdm import tqdm
+
+
 class ActWrapper(object):
     def __init__(self, act, act_params):
         self._act = act
@@ -118,6 +120,8 @@ def learn(env,
           load_path=None,
           ddqn=False,
           prior=False,
+          save_freq=True,
+          save_freq_rate=100000,
           **network_kwargs
           ):
     """Train a deepq model.
@@ -187,6 +191,7 @@ def learn(env,
         Wrapper over act function. Adds ability to save it and load it.
         See header of baselines/deepq/categorical.py for details on the act function.
     """
+    checkpoint_path = logger.get_dir()
     # Create all the functions necessary to train the model
 
     sess = get_session()
@@ -254,7 +259,7 @@ def learn(env,
     with tempfile.TemporaryDirectory() as td:
         td = checkpoint_path or td
 
-        model_file = os.path.join(td, "model")
+        model_file = os.path.join(td, "best_model")
         model_saved = False
 
         if tf.train.latest_checkpoint(td) is not None:
@@ -329,7 +334,11 @@ def learn(env,
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
                 logger.record_tabular("mean 10 episode reward", mean_100ep_reward)
                 logger.dump_tabular()
-
+            if save_freq:
+                if t % save_freq_rate == 0:
+                    print("saving model periodically")
+                    temp_model_file = os.path.join(checkpoint_path, "model_{}".format(t // checkpoint_freq))
+                    save_variables(temp_model_file)
             if (checkpoint_freq is not None and t > learning_starts and
                     num_episodes > 100 and t % checkpoint_freq == 0):
                 if saved_mean_reward is None or mean_100ep_reward > saved_mean_reward:
@@ -356,7 +365,7 @@ class BLRParams(object):
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
         self.sample_w = 1000
-        self.batch_size = 300000# batch size to do blr from
+        self.batch_size = 100000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 64
         self.first_time = True
@@ -460,7 +469,7 @@ def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_
     n = np.zeros(num_actions)
     n_samples = blr_param.batch_size if len(replay_buffer) > blr_param.batch_size else len(replay_buffer)
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
-    mini_batch_size = 10000
+    mini_batch_size = 32*num_actions
     for j in tqdm(range(len(replay_buffer) // mini_batch_size)):
         # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
         start_idx = j*mini_batch_size
@@ -571,7 +580,7 @@ def learn_neural_linear(env,
     #Train a deepq model.
 
     # Create all the functions necessary to train the model
-
+    checkpoint_path = logger.get_dir()
     sess = get_session()
     set_global_seeds(seed)
 
@@ -669,7 +678,7 @@ def learn_neural_linear(env,
 
         blr_update = 0
 
-        for t in range(total_timesteps):
+        for t in tqdm(range(total_timesteps)):
             if callback is not None:
                 if callback(locals(), globals()):
                     break

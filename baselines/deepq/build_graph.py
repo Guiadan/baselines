@@ -498,7 +498,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         return act_f, train, update_target, {'q_values': q_values}
 
 def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
-    double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None, actor='dqn'):
+    double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None, actor='target'):
     """Creates the train function:
 
     Parameters
