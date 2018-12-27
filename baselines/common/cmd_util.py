@@ -146,6 +146,7 @@ def common_arg_parser():
     parser.add_argument('--neural_linear', default=False, type=str2bool)
     parser.add_argument('--ddqn', default=False, type=str2bool)
     parser.add_argument('--prior', help='prior method (no prior, simple, sdp)', type=str, default='no prior')
+    parser.add_argument('--actor', help='use phi(x) of target network or dqn network (dqn, target)', type=str, default='dqn')
     return parser
 
 def robotics_arg_parser():

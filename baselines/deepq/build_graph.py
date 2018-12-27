@@ -180,7 +180,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
 
         eps = tf.get_variable("eps", (), initializer=tf.constant_initializer(0))
 
-        q_values = q_func(observations_ph.get(), num_actions, scope="q_func")
+        q_values, _ = q_func(observations_ph.get(), num_actions, scope="q_func")
         deterministic_actions = tf.argmax(q_values, axis=1)
 
         batch_size = tf.shape(observations_ph.get())[0]
@@ -432,11 +432,11 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         # q network evaluation
-        q_t = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
+        q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
         # target q network evalution
-        q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
+        q_tp1, _ = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
         # q scores for actions which we know were selected in the given state.
@@ -478,6 +478,9 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             update_target_expr.append(var_target.assign(var))
         update_target_expr = tf.group(*update_target_expr)
 
+        phiphiTop = tf.matmul(tf.transpose(phi_xt), phi_xt)
+        phiYop = tf.squeeze(tf.matmul(tf.expand_dims(q_t_selected_target,0), phi_xt))
+
         # Create callable functions
         train = U.function(
             inputs=[
@@ -494,8 +497,19 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         update_target = U.function([], [], updates=[update_target_expr])
 
         q_values = U.function([obs_t_input], q_t)
-
-        return act_f, train, update_target, {'q_values': q_values}
+        blr_ops = U.function(
+            inputs=[
+                obs_t_input,
+                act_t_ph,
+                rew_t_ph,
+                obs_tp1_input,
+                done_mask_ph,
+                importance_weights_ph
+            ],
+            outputs=[phiphiTop,phiYop]
+        )
+        feat = U.function([obs_t_input], phi_xt)
+        return act_f, train, update_target, {'q_values': q_values}, feat, blr_ops
 
 def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
     double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None, actor='target'):
@@ -582,7 +596,7 @@ def build_train_neural_linear(make_obs_ph, q_func, num_actions, optimizer, grad_
         # target q network evalution
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
-        last_layer_weights = target_q_func_vars[-2]
+        last_layer_weights = q_func_vars[-2]#target_q_func_vars[-2]
 
         # q scores for actions which we know were selected in the given state.
         q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)

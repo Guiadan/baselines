@@ -1,5 +1,7 @@
 import os
 import tempfile
+import os.path as osp
+import pickle
 
 import tensorflow as tf
 import zipfile
@@ -203,7 +205,7 @@ def learn(env,
         convs=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
         hiddens=[blr_params.feat_dim],
         dueling=bool(0),
-        neural_linear=False
+        neural_linear=True
     )
     # capture the shape outside the closure so that the env object is not serialized
     # by cloudpickle when serializing make_obs_ph
@@ -212,7 +214,7 @@ def learn(env,
     def make_obs_ph(name):
         return ObservationInput(observation_space, name=name)
 
-    act, train, update_target, debug = deepq.build_train(
+    act, train, update_target, debug, feat, blr_ops = deepq.build_train(
         make_obs_ph=make_obs_ph,
         q_func=q_func,
         num_actions=env.action_space.n,
@@ -335,10 +337,18 @@ def learn(env,
                 logger.record_tabular("mean 10 episode reward", mean_100ep_reward)
                 logger.dump_tabular()
             if save_freq:
-                if t % save_freq_rate == 0:
+                if t > 0 and t % save_freq_rate == 0:
                     print("saving model periodically")
                     temp_model_file = os.path.join(checkpoint_path, "model_{}".format(t // checkpoint_freq))
                     save_variables(temp_model_file)
+                    phiphiT, phiY = calculate_precision(replay_buffer, env.action_space.n, blr_ops, blr_params, n_samples=100000)
+                    print("saving data to:")
+                    print(osp.join(checkpoint_path,"phiphiT_{}.pickle".format(t // checkpoint_freq)))
+                    with open(osp.join(checkpoint_path,"phiphiT_{}.pickle".format(t // checkpoint_freq)),'wb') as f:
+                        pickle.dump(phiphiT,f)
+                    with open(osp.join(checkpoint_path,"phiY_{}.pickle".format(t // checkpoint_freq)),'wb') as f:
+                        pickle.dump(phiphiT,f)
+
             if (checkpoint_freq is not None and t > learning_starts and
                     num_episodes > 100 and t % checkpoint_freq == 0):
                 if saved_mean_reward is None or mean_100ep_reward > saved_mean_reward:
@@ -376,6 +386,11 @@ class BLRParams(object):
 def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim):
     d = [[] for i in range(num_actions)]
     phi = [[] for i in range(num_actions)]
+    n = [0 for i in range(num_actions)]
+    print("transforming information")
+    from datetime import datetime
+    fmt = '%Y-%m-%d %H:%M:%S'
+    d1 = datetime.strptime('2010-01-01 17:31:22', fmt)
     for j in range(batch_size):
         obs_t, action, reward, obs_tp1, done = replay_buffer.sample(1)
 
@@ -388,11 +403,14 @@ def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batc
         # new data correlations
         c = dqn_feat(obs_tp1).reshape((feat_dim, 1))
         phi[int(action)].append(np.outer(c, c))
-
+        n[int(action)] += 1
+    print(n,sum(n))
     precisions_return = []
     cov = []
-    prior = (0.0001) * np.eye(feat_dim)
+    prior = (0.001) * np.eye(feat_dim)
+    print("solving optimization")
     for a in range(num_actions):
+        print("for action {}".format(a))
         if d[a] != []:
             X = cvx.Variable((feat_dim, feat_dim), PSD=True)
             # Form objective.
@@ -403,12 +421,81 @@ def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batc
                 precisions_return.append(np.linalg.inv(prior))
                 cov.append(prior)
             else:
+                print("failed - cvxpy couldn't solve for action {}".format(a))
                 precisions_return.append(np.linalg.inv(X.value + prior))
                 cov.append(X.value + prior)
         else:
+            print("failed - no samples for this action - {}".format(a))
             precisions_return.append(np.linalg.inv(prior))
             cov.append(prior)
+    d2 = datetime.strptime('2010-01-03 17:31:22', fmt)
+    print("total time for information transfer:")
+    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
+    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
     return precisions_return, cov
+
+def calculate_precision(replay_buffer, num_actions, blr_ops, blr_params, n_samples=100000):
+                        obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
+                        mini_batch_size = 32*num_actions
+                        phiphiT = np.zeros((num_actions, blr_params.feat_dim, blr_params.feat_dim))
+                        phiY = np.zeros((num_actions, blr_params.feat_dim))
+                        n = [0 for _ in range(num_actions)]
+                        for j in tqdm(range((n_samples // mini_batch_size)+1)):
+                            start_idx = j*mini_batch_size
+                            end_idx = (j+1)*mini_batch_size if (j+1)*mini_batch_size < len(replay_buffer) else -1
+                            obs_t = obses_t[start_idx:end_idx] / 255.
+                            action = actions[start_idx:end_idx]
+                            reward = rewards[start_idx:end_idx]
+                            obs_tp1 = obses_tp1[start_idx:end_idx] / 255.
+                            done = dones[start_idx:end_idx]
+
+                            # calculating target
+                            for k in range(num_actions):
+                                if obs_t[action == k].shape[0] < 1:
+                                    continue
+                                phiphiTk, phiYk = blr_ops(obs_t[action == k], action[action == k], reward[action == k], obs_tp1[action == k], done[action == k])
+                                phiphiT[k] += phiphiTk
+                                phiY[k] += phiYk
+                                n[k] += obs_t[action == k].shape[0]
+                        return phiphiT, phiY
+
+def calc_precision_prior(self,contexts, blr_params, phiphiT):
+    precisions_return = []
+    n,m = contexts.shape
+    prior = (blr_params.sigma) * np.eye(blr_params.feat_dim)
+
+    if self.cov is not None:
+      for action,precision in enumerate(self.cov):
+        ind = np.array([i for i in range(n) if self.data_h.actions[i] == action])
+        if len(ind)>0:
+
+          """compute confidence scores for old data"""
+          d = []
+          for c in self.latent_h.contexts[ind, :]:
+            d.append(np.dot(np.dot(c,precision),c.T))
+
+          """compute new data correlations"""
+          phi = []
+          for c in contexts[ind, :]:
+            phi.append(np.outer(c,c))
+
+          X = cvx.Variable((m, m), PSD=True)
+          # Form objective.
+          obj = cvx.Minimize(sum([(cvx.trace(X*phi[i]) - d[i])**2 for i in xrange(len(d))]))
+          prob = cvx.Problem(obj)
+          prob.solve()
+          if X.value is None:
+            precisions_return.append(np.linalg.inv(prior))
+            self.cov[action] = prior
+
+          else:
+            precisions_return.append(np.linalg.inv(X.value+prior))
+            self.cov[action] = X.value+prior
+        else:
+          precisions_return.append(np.linalg.inv(prior))
+          self.cov[action] = prior
+
+    return precisions_return
 
 def information_transfer_old(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim):
     d = [[] for i in range(num_actions)]
@@ -428,8 +515,10 @@ def information_transfer_old(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
 
     precisions_return = []
     cov = []
-    prior = (0.0001) * np.eye(feat_dim)
+    print("solving optimization")
+    prior = (0.001) * np.eye(feat_dim)
     for a in range(num_actions):
+        print("for action {}".format(a))
         if d[a] != []:
             X = cvx.Variable((feat_dim, feat_dim), PSD=True)
             # Form objective.
@@ -445,6 +534,9 @@ def information_transfer_old(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
         else:
             precisions_return.append(np.linalg.inv(prior))
             cov.append(prior)
+    d2 = datetime.strptime('2010-01-03 17:31:22', fmt)
+    print("total time for information transfer:")
+    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
     return precisions_return, cov
 
 def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_feat, target, num_actions, blr_param,
@@ -464,13 +556,16 @@ def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_
         phiY *= (1-blr_param.alpha)
         phiphiT *= (1-blr_param.alpha)
     elif prior == "sdp":
-        print("SDP prior")
+        print("SDP prior")                                                     #batch size
+        phiphiT0, _ = information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 50000      , num_actions, feat_dim)
+        phiY *= (1-blr_param.alpha)*0
+        phiphiT *= (1-blr_param.alpha)*0
 
     n = np.zeros(num_actions)
     n_samples = blr_param.batch_size if len(replay_buffer) > blr_param.batch_size else len(replay_buffer)
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
     mini_batch_size = 32*num_actions
-    for j in tqdm(range(len(replay_buffer) // mini_batch_size)):
+    for j in tqdm(range((n_samples // mini_batch_size)+1)):
         # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
         start_idx = j*mini_batch_size
         end_idx = (j+1)*mini_batch_size if (j+1)*mini_batch_size < len(replay_buffer) else -1
@@ -504,7 +599,10 @@ def BayesRegNoPrior(phiphiT, phiY, w_target, replay_buffer,dqn_feat, target_dqn_
     # w_cov = blr_param.sigma*inv
     for i in range(num_actions):
         inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
-        w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
+        if prior == "sdp":
+            w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
+        else:
+            w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
         w_cov[i] = blr_param.sigma*inv
     return phiphiT, phiY, w_mu, w_cov, a, b
 
@@ -575,6 +673,7 @@ def learn_neural_linear(env,
           load_path=None,
           ddqn=False,
           prior="no prior",
+          actor="dqn",
           **network_kwargs
                         ):
     #Train a deepq model.
@@ -607,7 +706,8 @@ def learn_neural_linear(env,
         gamma=gamma,
         grad_norm_clipping=10,
         param_noise=param_noise,
-        double_q=ddqn
+        double_q=ddqn,
+        actor=actor
     )
     act_params = {
         'make_obs_ph': make_obs_ph,
