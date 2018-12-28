@@ -377,7 +377,7 @@ class BLRParams(object):
         self.sample_w = 1000
         self.batch_size = 100000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
-        self.feat_dim = 64
+        self.feat_dim = 512 #64
         self.first_time = True
         self.no_prior = True
         self.a0 = 6
@@ -418,10 +418,10 @@ def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batc
             prob = cvx.Problem(obj)
             prob.solve()
             if X.value is None:
+                print("failed - cvxpy couldn't solve for action {}".format(a))
                 precisions_return.append(np.linalg.inv(prior))
                 cov.append(prior)
             else:
-                print("failed - cvxpy couldn't solve for action {}".format(a))
                 precisions_return.append(np.linalg.inv(X.value + prior))
                 cov.append(X.value + prior)
         else:

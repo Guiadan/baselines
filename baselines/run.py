@@ -79,6 +79,7 @@ def train(args, extra_args):
 
     alg_kwargs.update({'ddqn': args.ddqn})
     alg_kwargs.update({'prior': args.prior})
+    alg_kwargs.update({'actor': args.actor})
 
     print('Training {} on {}:{} with arguments \n{}'.format(args.alg, env_type, env_id, alg_kwargs))
 
